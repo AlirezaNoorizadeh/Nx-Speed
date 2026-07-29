@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Nx Speed",
+  "version": "1.0",
+  "description": "Control playback speed of audio and video files",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Nx Speed",
+    "default_icon": {
+      "16": "icon-active.png",
+      "48": "icon-active.png",
+      "128": "icon-active.png"
+    }
+  },
+  "icons": {
+    "16": "icon-active.png",
+    "48": "icon-active.png",
+    "128": "icon-active.png"
+  }
+}
