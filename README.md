@@ -18,6 +18,20 @@ Nx Speed drops a small floating control onto any page with audio or video and le
 
 ---
 
+## 🖼️ Preview
+
+The floating controller shifts color with speed — purple at the low end, blue at 1x, warming up to orange and red as speed increases.
+
+| 0.1x | 0.5x | 1x |
+|:---:|:---:|:---:|
+| ![0.1x](./assets/screenshot-0.jpg) | ![0.5x](./assets/screenshot-1.jpg) | ![1x](./assets/screenshot-2.jpg) |
+
+| 2x | 3x | 4x |
+|:---:|:---:|:---:|
+| ![2x](./assets/screenshot-3.jpg) | ![3x](./assets/screenshot-4.jpg) | ![4x](./assets/screenshot-5.jpg) |
+
+---
+
 ## 🚀 Getting Started
 
 ### Project Structure
