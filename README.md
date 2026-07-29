@@ -24,11 +24,11 @@ The floating controller shifts color with speed — purple at the low end, blue 
 
 | 0.1x | 0.5x | 1x |
 |:---:|:---:|:---:|
-| ![0.1x](./assets/screenshot-0.jpg) | ![0.5x](./assets/screenshot-1.jpg) | ![1x](./assets/screenshot-2.jpg) |
+| ![0.1x](https://github.com/AlirezaNoorizadeh/Nx-Speed/blob/main/assets/Screenshot-0.jpg) | ![0.5x](https://github.com/AlirezaNoorizadeh/Nx-Speed/blob/main/assets/Screenshot-1.jpg) | ![1x](https://github.com/AlirezaNoorizadeh/Nx-Speed/blob/main/assets/Screenshot-2.jpg) |
 
 | 2x | 3x | 4x |
 |:---:|:---:|:---:|
-| ![2x](./assets/screenshot-3.jpg) | ![3x](./assets/screenshot-4.jpg) | ![4x](./assets/screenshot-5.jpg) |
+| ![2x](https://github.com/AlirezaNoorizadeh/Nx-Speed/blob/main/assets/Screenshot-3.jpg) | ![3x](https://github.com/AlirezaNoorizadeh/Nx-Speed/blob/main/assets/Screenshot-4.jpg) | ![4x](https://github.com/AlirezaNoorizadeh/Nx-Speed/blob/main/assets/Screenshot-5.jpg) |
 
 ---
 
