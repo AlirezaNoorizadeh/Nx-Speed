@@ -1,21 +1,16 @@
-// Default state: enabled
-let isEnabled = true;
+// ============ Nx Speed - Background Service Worker ============
+// State is kept ONLY in chrome.storage.local. Every context (background,
+// every content script in every tab) reacts to storage.onChanged, so
+// there is a single source of truth and no manual tab-by-tab messaging.
 
-// Save state to storage on install
-chrome.runtime.onInstalled.addListener(() => {
-    chrome.storage.local.set({ enabled: true });
-    console.log('✅ Nx Speed installed');
-});
-
-// Get state from storage
-chrome.storage.local.get(['enabled'], function(result) {
-    if (result.enabled !== undefined) {
-        isEnabled = result.enabled;
-        updateIcon(isEnabled);
+// Set the default state only on first install, never on update/reload,
+// so an existing user's OFF preference isn't silently reset.
+chrome.runtime.onInstalled.addListener((details) => {
+    if (details.reason === 'install') {
+        chrome.storage.local.set({ enabled: true });
     }
 });
 
-// Update icon function
 function updateIcon(enabled) {
     const iconPath = enabled ? 'icon-active.png' : 'icon-inactive.png';
     chrome.action.setIcon({
@@ -24,36 +19,32 @@ function updateIcon(enabled) {
             48: iconPath,
             128: iconPath
         }
-    }).catch((error) => {
-        console.log('⚠️ Icon not found, using default');
+    }).catch(() => {
+        // Icon file missing/not yet available — safe to ignore.
     });
-    
-    const title = enabled ? 'Nx Speed: ON ✅' : 'Nx Speed: OFF ❌';
-    chrome.action.setTitle({ title: title });
+
+    chrome.action.setTitle({
+        title: enabled ? 'Nx Speed: ON' : 'Nx Speed: OFF'
+    });
 }
 
-// Listen to icon click
-chrome.action.onClicked.addListener((tab) => {
-    isEnabled = !isEnabled;
-    chrome.storage.local.set({ enabled: isEnabled });
-    updateIcon(isEnabled);
-    
-    try {
-        chrome.tabs.sendMessage(tab.id, { 
-            action: 'toggle',
-            enabled: isEnabled 
-        }).catch(() => {});
-    } catch (error) {}
+// Set the correct icon whenever the service worker wakes up
+// (install, browser startup, or being re-spawned by Chrome).
+chrome.storage.local.get(['enabled'], (result) => {
+    updateIcon(result.enabled !== false);
 });
 
-// Listen to messages from content script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message.action === 'getStatus') {
-        chrome.storage.local.get(['enabled'], function(result) {
-            sendResponse({ enabled: result.enabled !== false });
-        });
-        return true;
+// Toggle on icon click — this ONLY writes to storage.
+// Every tab's content script updates itself via storage.onChanged.
+chrome.action.onClicked.addListener(async () => {
+    const { enabled } = await chrome.storage.local.get(['enabled']);
+    const newEnabled = !(enabled !== false);
+    await chrome.storage.local.set({ enabled: newEnabled });
+});
+
+// Keep the toolbar icon in sync with storage changes made from anywhere.
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.enabled) {
+        updateIcon(changes.enabled.newValue !== false);
     }
 });
-
-console.log('✅ Nx Speed background service worker started!');

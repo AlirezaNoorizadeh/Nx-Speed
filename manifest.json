@@ -1,10 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Nx Speed",
-  "version": "1.0",
-  "description": "Control playback speed of audio and video files",
+  "version": "1.0.1",
+  "description": "Control the playback speed of any audio or video on the page.",
   "permissions": [
-    "activeTab",
     "storage"
   ],
   "host_permissions": [

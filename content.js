@@ -8,43 +8,63 @@ let currentSpeed = 1;
 let targetElement = null;
 let isMediaPlaying = false;
 
-// ============ Get status from background ============
-try {
-    chrome.runtime.sendMessage({ action: 'getStatus' }, function(response) {
-        if (response && response.enabled !== undefined) {
-            isEnabled = response.enabled;
-            if (isEnabled) {
-                createUI();
-            }
-        }
-    });
-} catch (error) {
-    isEnabled = true;
-    createUI();
+let listenersAttached = false;   // prevents duplicate document listeners
+let pollIntervalId = null;       // so we can stop polling when disabled
+
+// The widget lives inside a Shadow DOM so the host page's CSS can never
+// leak in (e.g. a site-wide `button { all: unset !important }` reset)
+// and our styles/animations can never leak out onto the page.
+let shadowHost = null;
+let shadowRoot = null;
+
+function getShadowRoot() {
+    if (shadowRoot) return shadowRoot;
+
+    shadowHost = document.createElement('div');
+    shadowHost.id = 'nx-speed-host';
+    // The host itself takes no visual space; children use position:fixed
+    // inside the shadow tree, which still resolves against the viewport.
+    shadowHost.style.cssText = 'all:initial; position:fixed; inset:0; width:0; height:0; pointer-events:none; z-index:2147483647;';
+    document.documentElement.appendChild(shadowHost);
+    shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+    return shadowRoot;
 }
 
-// ============ Listen to messages from background ============
-try {
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.action === 'toggle') {
-            isEnabled = message.enabled;
-            if (isEnabled) {
-                createUI();
-            } else {
-                removeUI();
-            }
+// ============ Read initial state & stay in sync across all tabs ============
+// storage.onChanged fires in every context (every tab's content script,
+// the background worker, etc.) automatically — no manual tab messaging
+// needed, so no tab can ever get out of sync with another.
+chrome.storage.local.get(['enabled'], (result) => {
+    isEnabled = result.enabled !== false;
+    if (isEnabled) createUI();
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.enabled) {
+        isEnabled = changes.enabled.newValue !== false;
+        if (isEnabled) {
+            createUI();
+        } else {
+            removeUI();
         }
-    });
-} catch (error) {}
+    }
+});
 
 // ============ Functions ============
 
 function removeUI() {
-    const oldContainer = document.querySelector('.custom-speed-btn');
-    if (oldContainer) oldContainer.remove();
-    const oldToast = document.querySelector('.custom-speed-toast');
-    if (oldToast) oldToast.remove();
+    if (shadowHost) {
+        shadowHost.remove();
+    }
+    shadowHost = null;
+    shadowRoot = null;
     container = null;
+
+    if (pollIntervalId) {
+        clearInterval(pollIntervalId);
+        pollIntervalId = null;
+    }
+    isMediaPlaying = false;
 }
 
 // ============ Enable/Disable buttons ============
@@ -52,7 +72,7 @@ function setButtonsEnabled(enabled) {
     const buttons = [btnPrevFast, btnPrev, btnNext, btnNextFast];
     const opacity = enabled ? '1' : '0.3';
     const pointerEvents = enabled ? 'auto' : 'none';
-    
+
     buttons.forEach(btn => {
         if (btn) {
             btn.style.opacity = opacity;
@@ -60,7 +80,7 @@ function setButtonsEnabled(enabled) {
             btn.style.cursor = enabled ? 'pointer' : 'default';
         }
     });
-    
+
     if (speedDisplay) {
         if (enabled) {
             speedDisplay.style.opacity = '1';
@@ -76,7 +96,7 @@ function setButtonsEnabled(enabled) {
 function checkPlayingStatus() {
     const allMedia = document.querySelectorAll('audio, video');
     let isPlaying = false;
-    
+
     for (let element of allMedia) {
         if (!element.paused && !element.ended && element.currentTime > 0) {
             isPlaying = true;
@@ -84,10 +104,10 @@ function checkPlayingStatus() {
             break;
         }
     }
-    
+
     isMediaPlaying = isPlaying;
     setButtonsEnabled(isPlaying);
-    
+
     if (isPlaying && targetElement) {
         const color = getSpeedColor(targetElement.playbackRate || 1);
         speedDisplay.textContent = '⚡ ' + (targetElement.playbackRate || 1).toFixed(1) + 'x';
@@ -98,37 +118,56 @@ function checkPlayingStatus() {
         speedDisplay.style.background = '#555';
         speedDisplay.style.boxShadow = 'none';
     }
-    
+
     return isPlaying;
 }
 
 // ============ Media event listeners ============
+// Guarded so repeated enable/disable/enable cycles never register
+// the same document-level listeners or interval more than once.
 function setupMediaListeners() {
+    if (listenersAttached) {
+        // Listeners already exist from a previous createUI() call;
+        // just make sure the polling interval is (re)running.
+        if (!pollIntervalId) {
+            pollIntervalId = setInterval(checkPlayingStatus, 2000);
+        }
+        return;
+    }
+    listenersAttached = true;
+
     document.addEventListener('play', function(e) {
+        if (!isEnabled) return;
         if (e.target && (e.target.tagName === 'AUDIO' || e.target.tagName === 'VIDEO')) {
             targetElement = e.target;
             checkPlayingStatus();
         }
     }, true);
-    
+
     document.addEventListener('pause', function(e) {
+        if (!isEnabled) return;
         if (e.target && (e.target.tagName === 'AUDIO' || e.target.tagName === 'VIDEO')) {
             setTimeout(checkPlayingStatus, 100);
         }
     }, true);
-    
+
     document.addEventListener('ended', function(e) {
+        if (!isEnabled) return;
         if (e.target && (e.target.tagName === 'AUDIO' || e.target.tagName === 'VIDEO')) {
             setTimeout(checkPlayingStatus, 100);
         }
     }, true);
-    
-    setInterval(checkPlayingStatus, 2000);
+
+    pollIntervalId = setInterval(() => {
+        if (isEnabled) checkPlayingStatus();
+    }, 2000);
 }
 
 function createUI() {
-    if (document.querySelector('.custom-speed-btn')) return;
-    
+    if (shadowHost) return; // already built
+
+    const root = getShadowRoot();
+
     container = document.createElement('div');
     container.className = 'custom-speed-btn';
     container.style.cssText = `
@@ -150,6 +189,7 @@ function createUI() {
         -webkit-tap-highlight-color:transparent;
         font-family:sans-serif;
         direction:ltr;
+        pointer-events:auto;
     `;
 
     const btnStyle = `
@@ -218,8 +258,8 @@ function createUI() {
     container.appendChild(btnNext);
     container.appendChild(btnNextFast);
 
-    document.body.appendChild(container);
-    
+    root.appendChild(container);
+
     setupMediaListeners();
     attachEvents();
     setTimeout(checkPlayingStatus, 500);
@@ -290,7 +330,7 @@ function getTargetElement() {
     if (targetElement && !targetElement.paused && !targetElement.ended) {
         return targetElement;
     }
-    
+
     const allMedia = document.querySelectorAll('audio, video');
     for (let element of allMedia) {
         if (!element.paused && !element.ended) {
@@ -298,7 +338,7 @@ function getTargetElement() {
             return element;
         }
     }
-    
+
     return null;
 }
 
@@ -330,30 +370,33 @@ function getSpeedColor(speed) {
 // ============ Update speed ============
 function updateSpeed(element, newSpeed) {
     if (!element) return;
-    
+
     if (newSpeed > 4) newSpeed = 0.1;
     if (newSpeed < 0.1) newSpeed = 4;
     newSpeed = Math.round(newSpeed * 10) / 10;
     element.playbackRate = newSpeed;
     currentSpeed = newSpeed;
     targetElement = element;
-    
+
     const color = getSpeedColor(newSpeed);
     speedDisplay.textContent = '⚡ ' + newSpeed.toFixed(1) + 'x';
     speedDisplay.style.background = color.bg;
     speedDisplay.style.boxShadow = `0 0 25px ${color.shadow}`;
     container.style.borderColor = color.shadow;
     container.style.boxShadow = `0 8px 32px ${color.shadow.replace('0.4', '0.2')}`;
-    
+
     const type = element.tagName === 'VIDEO' ? '🎬 Video' : '🎵 Audio';
     showToast(type + ' ⚡ ' + newSpeed.toFixed(1) + 'x');
 }
 
 // ============ Show toast message ============
 function showToast(msg) {
-    const old = document.querySelector('.custom-speed-toast');
+    if (!shadowHost) return; // widget isn't mounted (e.g. extension disabled)
+    const root = getShadowRoot();
+
+    const old = root.querySelector('.custom-speed-toast');
     if (old) old.remove();
-    
+
     const toast = document.createElement('div');
     toast.className = 'custom-speed-toast';
     toast.textContent = msg;
@@ -375,8 +418,8 @@ function showToast(msg) {
         animation:fadeInUp 0.2s ease;
         font-weight:bold;
     `;
-    
-    if (!document.getElementById('toast-style')) {
+
+    if (!root.getElementById('toast-style')) {
         const style = document.createElement('style');
         style.id = 'toast-style';
         style.textContent = `
@@ -385,22 +428,23 @@ function showToast(msg) {
                 to { opacity:1; transform:translateX(-50%) translateY(0); }
             }
         `;
-        document.head.appendChild(style);
+        root.appendChild(style);
     }
-    
-    document.body.appendChild(toast);
+
+    root.appendChild(toast);
     setTimeout(() => toast.remove(), 1200);
 }
 
 // ============ Keyboard shortcuts ============
 document.addEventListener('keydown', function(e) {
+    if (!isEnabled) return; // don't react at all while the extension is off
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    
+
     if (!isMediaPlaying) return;
-    
+
     const element = getTargetElement();
     if (!element) return;
-    
+
     if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
         e.preventDefault();
         let newSpeed = Math.round((element.playbackRate + 0.1) * 10) / 10;
@@ -416,6 +460,7 @@ document.addEventListener('keydown', function(e) {
 
 // ============ Click on media to select ============
 document.addEventListener('click', function(e) {
+    if (!isEnabled) return;
     const element = e.target.closest('audio, video');
     if (element) {
         targetElement = element;
@@ -424,17 +469,5 @@ document.addEventListener('click', function(e) {
 });
 
 // ============ Initial load ============
-if (document.readyState === 'complete') {
-    if (isEnabled) setTimeout(createUI, 300);
-} else {
-    document.addEventListener('DOMContentLoaded', function() {
-        if (isEnabled) setTimeout(createUI, 300);
-    });
-}
-
-console.log('✅ Nx Speed activated!');
-console.log('🎯 Click on any <audio> or <video> to select it');
-console.log('▶️ Buttons are disabled until media starts playing');
-console.log('📋 Controls: ◀◀ ◀ ⚡ ▶ ▶▶');
-console.log('   ◀◀ = -0.5x  |  ◀ = -0.1x  |  ⚡ = Reset 1x  |  ▶ = +0.1x  |  ▶▶ = +0.5x');
-console.log('🔄 Cycle: 0.1x → 4x and back');
+// (isEnabled / createUI are driven by the chrome.storage.local.get()
+// call and the storage.onChanged listener registered above.)
